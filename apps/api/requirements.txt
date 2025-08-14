@@ -1,0 +1,25 @@
+# Core dependencies
+modal>=0.63.0
+click>=8.0.0
+pydantic>=2.0.0
+httpx>=0.25.0
+
+# Package parsing
+toml>=0.10.2
+PyYAML>=6.0.0
+
+# CLI and utilities
+rich>=13.0.0
+loguru>=0.7.0
+networkx>=3.0
+
+# Testing (moved to setup.py extras: pip install -e .[dev])
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# pytest-mock>=3.11.0
+
+# Development (moved to setup.py extras: pip install -e .[dev])
+# black>=23.0.0
+# isort>=5.12.0
+# flake8>=6.0.0
+# mypy>=1.5.0

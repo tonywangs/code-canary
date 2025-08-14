@@ -1,0 +1,1 @@
+export { SBOMProcessor } from "./sbom-processor";
