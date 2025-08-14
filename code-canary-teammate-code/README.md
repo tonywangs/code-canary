@@ -92,21 +92,69 @@ The system is designed to provide comprehensive dependency analysis that can be 
 
 ## 🚀 Quick Start
 
+### Prerequisites
+- Node.js 18+ and pnpm 8+
+- Python 3.8+
+
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/dependency-canary.git
+# Clone the main repository
+git clone https://github.com/tonywangs/code-canary
 cd dependency-canary
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Install as editable package
-pip install -e .
+# Install all dependencies
+pnpm install
+pnpm -r build
 ```
 
-### Basic CLI Usage
+### Configuration
+
+**Set up Modal tokens for cloud processing:**
+
+Create environment files with the provided shared Modal tokens:
+
+**Create `apps/web/.env.local`**:
+```env
+# Modal configuration
+MODAL_TOKEN_ID=your-token-id
+MODAL_TOKEN_SECRET=your-token-secret
+USE_PYTHON_BRIDGE=true
+
+# OpenAI configuration (optional)
+OPENAI_API_KEY=your_openai_key_here
+```
+
+**Create `apps/api/.env.local`**:
+```env
+# Modal configuration - Shared tokens for hackathon  
+MODAL_TOKEN_ID=your-token-id
+MODAL_TOKEN_SECRET=your-token-secret
+USE_PYTHON_BRIDGE=true
+
+# OpenAI configuration (optional)
+OPENAI_API_KEY=your_openai_key_here
+```
+
+### Start the Application
+
+```bash
+# Start both frontend and API
+pnpm dev
+
+# Visit the web interface
+# Frontend: http://localhost:3000
+# API: http://localhost:3001
+```
+
+### Usage
+
+1. Upload a project (GitHub URL, ZIP file, or container image)
+2. **Real Modal cloud workers** analyze your project dependencies
+3. Explore interactive dependency graphs and AI-powered risk assessments
+4. Get actionable vulnerability remediation suggestions
+
+### CLI Usage (Python Backend)
 
 ```bash
 # Scan current directory (local processing)

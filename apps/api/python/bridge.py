@@ -35,6 +35,26 @@ class SBOMBridge:
         self.use_modal = use_modal
         self._current_project_ref = ''
         
+        # Configure Modal authentication from environment variables
+        if use_modal:
+            self._configure_modal_auth()
+    
+    def _configure_modal_auth(self):
+        """Configure Modal authentication using environment variables."""
+        import os
+        
+        modal_token_id = os.getenv('MODAL_TOKEN_ID')
+        modal_token_secret = os.getenv('MODAL_TOKEN_SECRET')
+        
+        if modal_token_id and modal_token_secret:
+            # Set Modal environment variables for authentication
+            os.environ['MODAL_TOKEN_ID'] = modal_token_id
+            os.environ['MODAL_TOKEN_SECRET'] = modal_token_secret
+            print(f"Configured Modal authentication with token ID: {modal_token_id[:8]}...", file=sys.stderr)
+        else:
+            print("Warning: Modal tokens not found in environment variables", file=sys.stderr)
+            print("Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET to use Modal workers", file=sys.stderr)
+        
     async def scan_project(self, project_ref: str, ref_type: str = "git") -> str:
         """
         Scan a project and return job ID (for compatibility with existing API).

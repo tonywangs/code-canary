@@ -11,7 +11,7 @@ export function corsHeaders(origin?: string) {
 
 export function handleCors(request: NextRequest, response: NextResponse) {
   const origin = request.headers.get('origin');
-  const headers = corsHeaders(origin);
+  const headers = corsHeaders(origin || undefined);
   
   Object.entries(headers).forEach(([key, value]) => {
     response.headers.set(key, value);

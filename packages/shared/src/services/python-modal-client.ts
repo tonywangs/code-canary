@@ -24,7 +24,8 @@ export class PythonModalClient implements ModalClient {
     try {
       const result = await this.executePythonBridge('scan', [
         '--project-ref', request.ref,
-        '--ref-type', request.refType
+        '--ref-type', request.refType,
+        '--use-modal'  // Use Modal workers for real cloud processing
       ]);
 
       // Store the project reference in cache using the returned job ID
