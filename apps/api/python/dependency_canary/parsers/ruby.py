@@ -109,6 +109,16 @@ class RubyParser(BaseParser):
         if lockfile_path.name != "Gemfile.lock":
             return []
             
+        # Get direct dependencies from Gemfile to properly classify lockfile dependencies
+        direct_deps = set()
+        gemfile_path = lockfile_path.parent / "Gemfile"
+        if gemfile_path.exists():
+            try:
+                manifest_deps = await self.parse_manifest(gemfile_path)
+                direct_deps.update(dep.package.name for dep in manifest_deps if dep.dependency_type in [DependencyType.DIRECT, DependencyType.DEV])
+            except Exception:
+                pass
+            
         dependencies = []
         
         try:
@@ -143,11 +153,12 @@ class RubyParser(BaseParser):
                                 repository_url=""
                             )
                             
-                            # We can't easily distinguish direct vs transitive in Gemfile.lock
-                            # without parsing the DEPENDENCIES section and checking against it
+                            # Determine if this is a direct or transitive dependency
+                            dep_type = DependencyType.DIRECT if name in direct_deps else DependencyType.TRANSITIVE
+                            
                             dependencies.append(self.create_dependency(
                                 package=package,
-                                dependency_type=DependencyType.TRANSITIVE,  # Conservative assumption
+                                dependency_type=dep_type,
                                 constraint=version
                             ))
                     

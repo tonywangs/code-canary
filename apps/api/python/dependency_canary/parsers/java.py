@@ -50,8 +50,32 @@ class JavaParser(BaseParser):
         Returns:
             List of all dependencies (direct and transitive)
         """
+        # Get direct dependencies from manifest to properly classify lockfile dependencies
+        direct_deps = set()
+        parent_dir = lockfile_path.parent
+        
+        # Check for Maven pom.xml
+        pom_path = parent_dir / "pom.xml"
+        if pom_path.exists():
+            try:
+                manifest_deps = await self._parse_maven_pom(pom_path)
+                direct_deps.update(dep.package.name for dep in manifest_deps if dep.dependency_type in [DependencyType.DIRECT, DependencyType.DEV])
+            except Exception:
+                pass
+        
+        # Check for Gradle build files
+        for gradle_file in ["build.gradle", "build.gradle.kts"]:
+            gradle_path = parent_dir / gradle_file
+            if gradle_path.exists():
+                try:
+                    manifest_deps = await self._parse_gradle_build(gradle_path)
+                    direct_deps.update(dep.package.name for dep in manifest_deps if dep.dependency_type in [DependencyType.DIRECT, DependencyType.DEV])
+                    break
+                except Exception:
+                    pass
+        
         if lockfile_path.name == "gradle.lockfile":
-            return await self._parse_gradle_lockfile(lockfile_path)
+            return await self._parse_gradle_lockfile(lockfile_path, direct_deps)
         # Maven doesn't have a standard lockfile
         return []
     
@@ -173,7 +197,7 @@ class JavaParser(BaseParser):
         
         return dependencies
     
-    async def _parse_gradle_lockfile(self, lockfile_path: Path) -> List[Dependency]:
+    async def _parse_gradle_lockfile(self, lockfile_path: Path, direct_deps: set = None) -> List[Dependency]:
         """Parse Gradle lockfile.
         
         Args:
@@ -204,11 +228,13 @@ class JavaParser(BaseParser):
                         repository_url=""
                     )
                     
-                    # Lockfiles contain both direct and transitive dependencies
-                    # Without additional information, we can't determine which are direct
+                    # Determine if this is a direct or transitive dependency
+                    dep_name = f"{group}:{artifact}"
+                    dep_type = DependencyType.DIRECT if direct_deps and dep_name in direct_deps else DependencyType.TRANSITIVE
+                    
                     dependencies.append(self.create_dependency(
                         package=package,
-                        dependency_type=DependencyType.TRANSITIVE,  # Conservative assumption
+                        dependency_type=dep_type,
                         constraint=version.strip()
                     ))
                     

@@ -53,7 +53,7 @@ class JavaScriptParser(BaseParser):
                 )
                 dependency = self.create_dependency(
                     package=package,
-                    dependency_type=DependencyType.TRANSITIVE,
+                    dependency_type=DependencyType.DIRECT,
                     scope="runtime"
                 )
                 dependencies.append(dependency)
@@ -102,12 +102,28 @@ class JavaScriptParser(BaseParser):
         """
         filename = lockfile_path.name
         
+        # First get direct dependencies from manifest to properly classify lockfile dependencies
+        manifest_path = lockfile_path.parent / "package.json"
+        direct_deps = set()
+        if manifest_path.exists():
+            try:
+                manifest_content = self._read_file(manifest_path)
+                package_json = json.loads(manifest_content)
+                if "dependencies" in package_json:
+                    direct_deps.update(package_json["dependencies"].keys())
+                if "devDependencies" in package_json:
+                    direct_deps.update(package_json["devDependencies"].keys())
+                if "optionalDependencies" in package_json:
+                    direct_deps.update(package_json["optionalDependencies"].keys())
+            except Exception:
+                pass  # Continue without manifest info
+        
         if filename == "package-lock.json":
             return await self._parse_npm_lockfile(lockfile_path)
         elif filename == "yarn.lock":
-            return await self._parse_yarn_lockfile(lockfile_path)
+            return await self._parse_yarn_lockfile(lockfile_path, direct_deps)
         elif filename == "pnpm-lock.yaml":
-            return await self._parse_pnpm_lockfile(lockfile_path)
+            return await self._parse_pnpm_lockfile(lockfile_path, direct_deps)
         else:
             raise ValueError(f"Unsupported lockfile: {filename}")
     
@@ -234,7 +250,7 @@ class JavaScriptParser(BaseParser):
         
         return dependencies
     
-    async def _parse_yarn_lockfile(self, lockfile_path: Path) -> List[Dependency]:
+    async def _parse_yarn_lockfile(self, lockfile_path: Path, direct_deps: set = None) -> List[Dependency]:
         """Parse yarn.lock file.
         
         Args:
@@ -274,9 +290,12 @@ class JavaScriptParser(BaseParser):
                         namespace=self._extract_namespace(current_package)
                     )
                     
+                    # Determine if this is a direct or transitive dependency
+                    dep_type = DependencyType.DIRECT if direct_deps and current_package in direct_deps else DependencyType.TRANSITIVE
+                    
                     dependency = self.create_dependency(
                         package=package,
-                        dependency_type=DependencyType.TRANSITIVE  # Yarn lockfile contains all deps
+                        dependency_type=dep_type
                     )
                     dependencies.append(dependency)
                     
@@ -285,7 +304,7 @@ class JavaScriptParser(BaseParser):
         
         return dependencies
     
-    async def _parse_pnpm_lockfile(self, lockfile_path: Path) -> List[Dependency]:
+    async def _parse_pnpm_lockfile(self, lockfile_path: Path, direct_deps: set = None) -> List[Dependency]:
         """Parse pnpm-lock.yaml file.
         
         Args:
@@ -319,9 +338,12 @@ class JavaScriptParser(BaseParser):
                     namespace=self._extract_namespace(name)
                 )
                 
+                # Determine if this is a direct or transitive dependency
+                dep_type = DependencyType.DIRECT if direct_deps and name in direct_deps else DependencyType.TRANSITIVE
+                
                 dependency = self.create_dependency(
                     package=package,
-                    dependency_type=DependencyType.TRANSITIVE
+                    dependency_type=dep_type
                 )
                 dependencies.append(dependency)
         

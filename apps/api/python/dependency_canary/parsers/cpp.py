@@ -50,10 +50,31 @@ class CppParser(BaseParser):
         Returns:
             List of all dependencies (direct and transitive)
         """
+        # Get direct dependencies from manifest to properly classify lockfile dependencies
+        direct_deps = set()
+        parent_dir = lockfile_path.parent
+        
+        # Check for various manifest files
+        manifest_files = [
+            ("vcpkg.json", self._parse_vcpkg_json),
+            ("conanfile.txt", self._parse_conanfile_txt),
+            ("conanfile.py", self._parse_conanfile_py)
+        ]
+        
+        for manifest_name, parse_func in manifest_files:
+            manifest_path = parent_dir / manifest_name
+            if manifest_path.exists():
+                try:
+                    manifest_deps = await parse_func(manifest_path)
+                    direct_deps.update(dep.package.name for dep in manifest_deps if dep.dependency_type == DependencyType.DIRECT)
+                    break
+                except Exception:
+                    pass
+        
         if lockfile_path.name == "vcpkg-configuration.json":
-            return await self._parse_vcpkg_configuration(lockfile_path)
+            return await self._parse_vcpkg_configuration(lockfile_path, direct_deps)
         elif lockfile_path.name == "conan.lock":
-            return await self._parse_conan_lock(lockfile_path)
+            return await self._parse_conan_lock(lockfile_path, direct_deps)
         else:
             return []
     
@@ -262,7 +283,7 @@ class CppParser(BaseParser):
             
         return dependencies
     
-    async def _parse_vcpkg_configuration(self, lockfile_path: Path) -> List[Dependency]:
+    async def _parse_vcpkg_configuration(self, lockfile_path: Path, direct_deps: set = None) -> List[Dependency]:
         """Parse a vcpkg-configuration.json file.
         
         Args:
@@ -275,7 +296,7 @@ class CppParser(BaseParser):
         # It contains registry information, so we return an empty list for now
         return []
     
-    async def _parse_conan_lock(self, lockfile_path: Path) -> List[Dependency]:
+    async def _parse_conan_lock(self, lockfile_path: Path, direct_deps: set = None) -> List[Dependency]:
         """Parse a conan.lock file.
         
         Args:
