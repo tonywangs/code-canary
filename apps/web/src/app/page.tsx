@@ -5,13 +5,12 @@ import { ScanRequest, EnrichedSBOM, AgentAnswer } from '@dependency-canary/share
 import UploadForm from '@/components/upload-form';
 import KPITiles from '@/components/kpi-tiles';
 import SimpleGraph from '@/components/simple-graph';
+import DependencyGraphViz from '@/components/dependency-graph-viz';
 import QAPanel from '@/components/qa-panel';
 
 export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [sbom, setSBOM] = useState<EnrichedSBOM | null>(null);
-  const [selectedService, setSelectedService] = useState<string>('');
-  const [selectedNode, setSelectedNode] = useState<string>('');
 
   const handleScan = async (request: ScanRequest) => {
     setLoading(true);
@@ -119,6 +118,119 @@ export default function HomePage() {
 
       <UploadForm onSubmit={handleScan} loading={loading} />
 
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
+        <h3 className="text-lg font-semibold text-blue-900 mb-2">Quick Demo</h3>
+        <p className="text-blue-700 mb-4">
+          Want to see the dependency graph visualization? Try the demo with sample data.
+        </p>
+        <button
+          onClick={() => {
+            // Mock SBOM data for demo
+            const demoSBOM: EnrichedSBOM = {
+              projectId: 'demo-project',
+              generatedAt: new Date().toISOString(),
+              metadata: {
+                languages: ['typescript', 'javascript'],
+                services: ['web', 'api']
+              },
+              packages: [
+                {
+                  name: 'react',
+                  version: '18.2.0',
+                  eco: 'npm',
+                  direct: true,
+                  requires: [{ name: 'typescript', version: '5.9.2' }],
+                  vulns: []
+                },
+                {
+                  name: 'next',
+                  version: '14.1.0',
+                  eco: 'npm',
+                  direct: true,
+                  requires: [
+                    { name: 'react', version: '18.2.0' },
+                    { name: 'typescript', version: '5.9.2' }
+                  ],
+                  vulns: [
+                    { 
+                      id: 'CVE-2024-1234', 
+                      source: 'NVD',
+                      cvss: 3.1,
+                      severity: 'LOW', 
+                      published: '2024-01-01',
+                      summary: 'Test vulnerability',
+                      affectedRanges: ['<14.2.0']
+                    }
+                  ]
+                },
+                {
+                  name: 'typescript',
+                  version: '5.9.2',
+                  eco: 'npm',
+                  direct: false,
+                  requires: [],
+                  vulns: []
+                },
+                {
+                  name: 'd3',
+                  version: '7.8.5',
+                  eco: 'npm',
+                  direct: true,
+                  requires: [{ name: 'typescript', version: '5.9.2' }],
+                  vulns: []
+                },
+                {
+                  name: 'tailwindcss',
+                  version: '3.4.0',
+                  eco: 'npm',
+                  direct: true,
+                  requires: [],
+                  vulns: [
+                    { 
+                      id: 'CVE-2024-5678', 
+                      source: 'NVD',
+                      cvss: 5.5,
+                      severity: 'MEDIUM', 
+                      published: '2024-01-02',
+                      summary: 'Another test vulnerability',
+                      affectedRanges: ['<3.5.0']
+                    }
+                  ]
+                },
+                {
+                  name: 'lodash',
+                  version: '4.17.21',
+                  eco: 'npm',
+                  direct: true,
+                  requires: [],
+                  vulns: []
+                }
+              ],
+              summary: {
+                counts: {
+                  packages: 6,
+                  direct: 5,
+                  transitive: 1,
+                  vulns: 2,
+                  critical: 0,
+                  high: 0,
+                  medium: 1,
+                  low: 1
+                },
+                topRisks: [
+                  { package: 'tailwindcss', version: '3.4.0', score: 0.6, reason: 'Medium severity vulnerability' },
+                  { package: 'next', version: '14.1.0', score: 0.3, reason: 'Low severity vulnerability' }
+                ]
+              }
+            };
+            setSBOM(demoSBOM);
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+        >
+          View Demo Graph
+        </button>
+      </div>
+
       {loading && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
           <div className="flex items-center justify-center">
@@ -151,37 +263,7 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Filter by Service:
-                </label>
-                <select
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">All Services</option>
-                  {sbom.metadata.services.map((service) => (
-                    <option key={service} value={service}>
-                      {service}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <SimpleGraph 
-                sbom={sbom} 
-                selectedService={selectedService}
-                onNodeSelect={setSelectedNode}
-              />
-
-              {selectedNode && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-md">
-                  <p className="text-sm text-gray-600">
-                    Selected: <strong>{selectedNode}</strong>
-                  </p>
-                </div>
-              )}
+              <DependencyGraphViz sbom={sbom} />
             </div>
 
             <div>

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ReportGenerator } from '@/lib/report-generator';
-import { createVectorStore, SecurityAgent } from '@dependency-canary/agent';
+import { agentService } from '@/lib/agent-service';
 import puppeteer from 'puppeteer';
-
-const agentInstance = new SecurityAgent(createVectorStore());
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,7 +16,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const sbom = agentInstance['sbomCache']?.get(projectId);
+    const sbom = agentService.getSBOM(projectId);
     if (!sbom) {
       return NextResponse.json(
         { error: 'SBOM not found for project' },

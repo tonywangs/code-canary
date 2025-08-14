@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AskRequest } from '@dependency-canary/shared';
-import { createVectorStore, SecurityAgent } from '@dependency-canary/agent';
 import { corsResponse } from '@/lib/cors';
-
-const agentInstance = new SecurityAgent(createVectorStore());
+import { agentService } from '@/lib/agent-service';
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
@@ -27,7 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const answer = await agentInstance.ask(body.projectId, body.question);
+    const answer = await agentService.ask(body.projectId, body.question);
     
     return corsResponse(answer);
   } catch (error) {

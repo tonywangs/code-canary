@@ -3,12 +3,10 @@ import { createModalClient } from '@dependency-canary/shared';
 import { 
   createVectorStore, 
   createEmbedder, 
-  SBOMProcessor, 
-  SecurityAgent 
+  SBOMProcessor
 } from '@dependency-canary/agent';
 import { corsResponse } from '@/lib/cors';
-
-const agentInstance = new SecurityAgent(createVectorStore());
+import { agentService } from '@/lib/agent-service';
 
 export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
@@ -36,7 +34,11 @@ export async function GET(request: NextRequest) {
     const client = createModalClient();
     const sbom = await client.enrich(jobId);
 
-    // Skip expensive operations in development for faster testing
+    // Always index the SBOM for the agent to work properly
+    console.log('Indexing SBOM for agent access...');
+    await agentService.indexSBOM(sbom);
+    
+    // Skip expensive embedding operations in development for faster testing
     const skipExpensiveOps = process.env.SKIP_EMBEDDINGS === 'true' || process.env.NODE_ENV === 'development';
     
     if (!skipExpensiveOps) {
@@ -53,10 +55,8 @@ export async function GET(request: NextRequest) {
 
       const vectorStore = createVectorStore();
       await vectorStore.addDocuments(documents);
-      
-      await agentInstance.indexSBOM(sbom);
     } else {
-      console.log('Skipping expensive operations for faster development testing');
+      console.log('Skipping expensive embedding operations for faster development testing');
     }
 
     return corsResponse(sbom);
