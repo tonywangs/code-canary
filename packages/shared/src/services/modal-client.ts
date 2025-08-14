@@ -411,19 +411,24 @@ export function createModalClient(): ModalClient {
   const baseUrl = process.env.MODAL_BASE_URL;
   const usePython = process.env.USE_PYTHON_BRIDGE === 'true' || process.env.NODE_ENV === 'development';
   
-  if (usePython && !baseUrl) {
+  // Prioritize Python bridge for real GitHub analysis
+  if (usePython) {
     try {
       const { PythonModalClient } = require('./python-modal-client');
+      console.log('Using Python bridge for real GitHub repository analysis');
       return new PythonModalClient();
     } catch (error) {
-      console.log('Python bridge not available, using mock client:', error instanceof Error ? error.message : String(error));
+      console.log('Python bridge not available, falling back to mock client:', error instanceof Error ? error.message : String(error));
       return new MockModalClient();
     }
   }
   
-  if (!baseUrl) {
-    return new MockModalClient();
+  // Use real Modal client if base URL is provided
+  if (baseUrl) {
+    return new RealModalClient(baseUrl);
   }
   
-  return new RealModalClient(baseUrl);
+  // Fallback to mock client
+  console.log('No Python bridge or Modal URL configured, using mock client');
+  return new MockModalClient();
 }

@@ -9,13 +9,17 @@ import json
 import sys
 import tempfile
 import shutil
+import subprocess
+import re
 from pathlib import Path
 from typing import Dict, Any, List
 from datetime import datetime
 import argparse
+import os
 
-# Add the current directory to Python path so we can import dependency_canary
-sys.path.insert(0, str(Path(__file__).parent))
+# Add the teammate's code directory to Python path (prioritize the correct location)
+teammate_code_dir = Path(__file__).parent.parent.parent / "code-canary-teammate-code"
+sys.path.insert(0, str(teammate_code_dir))
 
 # Import teammate's code
 try:
@@ -24,16 +28,19 @@ try:
     from dependency_canary.vulnerability import VulnerabilityEnricher
     from dependency_canary.models import ScanResult, SBOM, Package, Vulnerability, SeverityLevel, DependencyType
     from dependency_canary.supply_chain_intelligence import SupplyChainIntelligence
+    print(f"✅ Successfully imported dependency_canary from: {teammate_code_dir}", file=sys.stderr)
 except ImportError as e:
     print(f"Error importing dependency_canary: {e}", file=sys.stderr)
+    print(f"Looking for code in: {teammate_code_dir}", file=sys.stderr)
     sys.exit(1)
 
 class SBOMBridge:
     """Bridge between teammate's Python SBOM system and our TypeScript system."""
     
-    def __init__(self, use_modal: bool = False):
+    def __init__(self, use_modal: bool = True):  # Default to True for real analysis
         self.use_modal = use_modal
         self._current_project_ref = ''
+        self._temp_dirs = []  # Track temp directories for cleanup
         
         # Configure Modal authentication from environment variables
         if use_modal:
@@ -54,12 +61,74 @@ class SBOMBridge:
         else:
             print("Warning: Modal tokens not found in environment variables", file=sys.stderr)
             print("Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET to use Modal workers", file=sys.stderr)
+    
+    def _cleanup_temp_dirs(self):
+        """Clean up temporary directories."""
+        for temp_dir in self._temp_dirs:
+            try:
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+                    print(f"Cleaned up temporary directory: {temp_dir}", file=sys.stderr)
+            except Exception as e:
+                print(f"Warning: Failed to clean up {temp_dir}: {e}", file=sys.stderr)
+        self._temp_dirs.clear()
+    
+    def _extract_repo_info(self, repo_url: str) -> Dict[str, str]:
+        """Extract repository information from GitHub URL."""
+        # Handle various GitHub URL formats
+        patterns = [
+            r'https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$',
+            r'git@github\.com:([^/]+)/([^/]+?)(?:\.git)?/?$',
+        ]
         
+        for pattern in patterns:
+            match = re.match(pattern, repo_url)
+            if match:
+                owner, repo = match.groups()
+                return {
+                    'owner': owner,
+                    'repo': repo,
+                    'full_name': f"{owner}/{repo}",
+                    'clone_url': f"https://github.com/{owner}/{repo}.git"
+                }
+        
+        return None
+    
+    async def _clone_github_repo(self, repo_url: str) -> Path:
+        """Clone a GitHub repository to a temporary directory."""
+        repo_info = self._extract_repo_info(repo_url)
+        if not repo_info:
+            raise ValueError(f"Invalid GitHub URL: {repo_url}")
+        
+        # Create temporary directory
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"canary_{repo_info['repo']}_"))
+        self._temp_dirs.append(temp_dir)
+        
+        print(f"Cloning {repo_info['full_name']} to {temp_dir}", file=sys.stderr)
+        
+        try:
+            # Clone the repository
+            result = subprocess.run(
+                ['git', 'clone', '--depth', '1', repo_info['clone_url'], str(temp_dir)],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"Git clone failed: {result.stderr}")
+            
+            print(f"Successfully cloned {repo_info['full_name']}", file=sys.stderr)
+            return temp_dir
+            
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Git clone timed out for {repo_url}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to clone repository: {e}")
+    
     async def scan_project(self, project_ref: str, ref_type: str = "git") -> str:
         """
         Scan a project and return job ID (for compatibility with existing API).
-        In the real implementation, this would clone/download the project.
-        For now, we'll use a mock project path.
         """
         # Store the project reference for later use
         self._current_project_ref = project_ref
@@ -67,16 +136,8 @@ class SBOMBridge:
         # Generate a unique job ID
         job_id = f"scan_{int(datetime.now().timestamp())}_{hash(project_ref) % 10000}"
         
-        # Store the project reference for later use
-        job_data = {
-            "job_id": job_id,
-            "project_ref": project_ref,
-            "ref_type": ref_type,
-            "status": "pending"
-        }
+        print(f"Scan initiated for {project_ref} with job ID: {job_id}", file=sys.stderr)
         
-        # In a real implementation, we'd store this in a database or cache
-        # For now, just return the job ID
         return job_id
     
     async def enrich_sbom(self, job_id: str) -> Dict[str, Any]:
@@ -84,57 +145,48 @@ class SBOMBridge:
         Generate and enrich SBOM for a job, returning TypeScript-compatible format.
         """
         try:
-            # Check if this is for a GitHub repo (no actual cloning implemented yet)
-            # For now, return mock data for GitHub repos to avoid scanning entire monorepo
             project_ref = getattr(self, '_current_project_ref', '')
             
+            # Determine project path based on reference type
             if project_ref.startswith('http') or 'github.com' in project_ref:
-                print(f"GitHub repo detected: {project_ref}, using enhanced mock data", file=sys.stderr)
-                return self._get_github_mock_sbom(project_ref)
+                print(f"GitHub repo detected: {project_ref}, cloning for real analysis", file=sys.stderr)
+                project_path = await self._clone_github_repo(project_ref)
+            else:
+                # For local scans, use the current directory
+                project_path = Path(".")
             
-            # For local scans, use a smaller scope
-            project_path = Path(".")
+            print(f"Analyzing project at: {project_path}", file=sys.stderr)
             
+            # Perform real SBOM generation and vulnerability analysis
             if self.use_modal:
-                # Use Modal workers for cloud processing
+                print("Using Modal cloud workers for analysis", file=sys.stderr)
                 modal_service = ModalSBOMService()
                 scan_result = await modal_service.full_scan_remote(project_path)
             else:
-                # Use local processing with timeout for large projects
-                print("Starting local SBOM generation...", file=sys.stderr)
+                print("Using local processing for analysis", file=sys.stderr)
                 generator = SBOMGenerator()
-                sbom = await generator.generate_sbom(project_path, include_transitive=False)  # Skip transitive to speed up
+                sbom = await generator.generate_sbom(project_path, include_transitive=True)
                 
-                # Skip vulnerability enrichment for large projects
-                if sbom.total_packages > 50:
-                    print(f"Large project detected ({sbom.total_packages} packages), skipping vulnerability scanning", file=sys.stderr)
-                    # Create a basic scan result without vulnerabilities
-                    from dependency_canary.models import ScanResult, RiskAssessment
-                    scan_result = ScanResult(
-                        sbom=sbom,
-                        risks=[],
-                        total_vulnerabilities=0,
-                        critical_vulnerabilities=0,
-                        high_vulnerabilities=0,
-                        medium_vulnerabilities=0,
-                        low_vulnerabilities=0,
-                        risk_assessment=RiskAssessment(overall_risk="LOW", summary="Vulnerability scanning skipped for large project")
-                    )
-                else:
-                    enricher = VulnerabilityEnricher()
-                    scan_result = await enricher.enrich_sbom(sbom)
+                # Perform vulnerability enrichment
+                enricher = VulnerabilityEnricher()
+                scan_result = await enricher.enrich_sbom(sbom)
             
             # Convert to TypeScript format
-            typescript_format = self._convert_to_typescript_format(scan_result)
+            typescript_format = self._convert_to_typescript_format(scan_result, project_ref)
+            
+            # Clean up temporary directories
+            self._cleanup_temp_dirs()
             
             return typescript_format
             
         except Exception as e:
-            # Fallback to mock data if real scanning fails
-            print(f"Real scanning failed: {e}, using mock data", file=sys.stderr)
+            print(f"Real scanning failed: {e}, using fallback mock data", file=sys.stderr)
+            # Clean up on error
+            self._cleanup_temp_dirs()
+            # Fallback to mock data
             return self._get_mock_enriched_sbom()
     
-    def _convert_to_typescript_format(self, scan_result: ScanResult) -> Dict[str, Any]:
+    def _convert_to_typescript_format(self, scan_result: ScanResult, project_ref: str = "") -> Dict[str, Any]:
         """Convert Python ScanResult to TypeScript EnrichedSBOM format."""
         
         # Convert packages
@@ -247,144 +299,6 @@ class SBOMBridge:
         }
         
         return result
-    
-    def _get_github_mock_sbom(self, repo_url: str) -> Dict[str, Any]:
-        """Generate realistic mock data for GitHub repositories."""
-        # Extract repo name from URL for realistic data
-        repo_name = repo_url.split('/')[-1].replace('.git', '') if '/' in repo_url else 'unknown-repo'
-        
-        # Generate language-specific mock packages based on common patterns
-        packages = []
-        if 'react' in repo_name.lower() or 'frontend' in repo_name.lower():
-            packages = [
-                {
-                    "name": "react",
-                    "version": "18.2.0",
-                    "eco": "npm",
-                    "direct": True,
-                    "serviceRefs": ["frontend"],
-                    "license": "MIT",
-                    "repoUrl": "https://github.com/facebook/react",
-                    "stats": {"weeklyDownloads": 15000000},
-                    "risk": {"abandoned": False, "typoSuspicion": 0.01, "newlyCreated": False, "maintainerTrust": "high"},
-                    "vulns": [],
-                    "requires": [],
-                    "requiredBy": []
-                },
-                {
-                    "name": "lodash",
-                    "version": "4.17.19",
-                    "eco": "npm",
-                    "direct": False,
-                    "serviceRefs": ["frontend"],
-                    "license": "MIT",
-                    "repoUrl": "https://github.com/lodash/lodash",
-                    "stats": {"weeklyDownloads": 10000000},
-                    "risk": {"abandoned": False, "typoSuspicion": 0.02, "newlyCreated": False, "maintainerTrust": "medium"},
-                    "vulns": [
-                        {
-                            "id": "CVE-2020-8203",
-                            "source": "NVD",
-                            "cvss": 7.4,
-                            "severity": "HIGH",
-                            "published": "2020-07-10",
-                            "summary": "Prototype pollution in lodash",
-                            "affectedRanges": ["<4.17.21"],
-                            "exploits": [{"type": "POC", "url": "https://github.com/advisories/GHSA-p6mc-m468-83gw"}],
-                            "advisories": [{"source": "GHSA", "id": "GHSA-p6mc-m468-83gw"}]
-                        }
-                    ],
-                    "requires": [],
-                    "requiredBy": [{"name": "react", "version": "18.2.0"}]
-                }
-            ]
-        elif 'python' in repo_name.lower() or 'django' in repo_name.lower():
-            packages = [
-                {
-                    "name": "requests",
-                    "version": "2.25.1",
-                    "eco": "pypi",
-                    "direct": True,
-                    "serviceRefs": ["api"],
-                    "license": "Apache-2.0",
-                    "repoUrl": "https://github.com/psf/requests",
-                    "stats": {"weeklyDownloads": 50000000},
-                    "risk": {"abandoned": False, "typoSuspicion": 0.01, "newlyCreated": False, "maintainerTrust": "high"},
-                    "vulns": [
-                        {
-                            "id": "CVE-2023-32681",
-                            "source": "NVD",
-                            "cvss": 6.1,
-                            "severity": "MEDIUM",
-                            "published": "2023-05-26",
-                            "summary": "Requests library can leak proxy credentials",
-                            "affectedRanges": ["<2.31.0"],
-                            "exploits": [],
-                            "advisories": [{"source": "GHSA", "id": "GHSA-j8r2-6x86-q33q"}]
-                        }
-                    ],
-                    "requires": [{"name": "urllib3", "version": "1.26.5"}],
-                    "requiredBy": []
-                }
-            ]
-        else:
-            # Generic small project
-            packages = [
-                {
-                    "name": "express",
-                    "version": "4.18.2",
-                    "eco": "npm",
-                    "direct": True,
-                    "serviceRefs": ["api"],
-                    "license": "MIT",
-                    "repoUrl": "https://github.com/expressjs/express",
-                    "stats": {"weeklyDownloads": 35000000},
-                    "risk": {"abandoned": False, "typoSuspicion": 0.01, "newlyCreated": False, "maintainerTrust": "high"},
-                    "vulns": [],
-                    "requires": [],
-                    "requiredBy": []
-                }
-            ]
-        
-        # Calculate summary stats
-        vuln_count = sum(len(pkg["vulns"]) for pkg in packages)
-        critical_count = sum(1 for pkg in packages for vuln in pkg["vulns"] if vuln.get("severity") == "CRITICAL")
-        high_count = sum(1 for pkg in packages for vuln in pkg["vulns"] if vuln.get("severity") == "HIGH")
-        medium_count = sum(1 for pkg in packages for vuln in pkg["vulns"] if vuln.get("severity") == "MEDIUM")
-        
-        # Generate top risks
-        top_risks = []
-        for pkg in packages:
-            if pkg["vulns"]:
-                top_risks.append({
-                    "package": pkg["name"],
-                    "version": pkg["version"],
-                    "reason": f"{len(pkg['vulns'])} vulnerabilities including {pkg['vulns'][0]['severity']} severity",
-                    "score": min(pkg["vulns"][0].get("cvss", 5.0) / 10.0, 1.0)
-                })
-        
-        return {
-            "projectId": f"github_{repo_name}_{int(datetime.now().timestamp())}",
-            "generatedAt": datetime.now().isoformat(),
-            "metadata": {
-                "languages": ["javascript", "python"] if len(packages) > 1 else ["javascript"],
-                "services": list(set(ref for pkg in packages for ref in pkg["serviceRefs"]))
-            },
-            "packages": packages,
-            "summary": {
-                "counts": {
-                    "packages": len(packages),
-                    "direct": sum(1 for pkg in packages if pkg["direct"]),
-                    "transitive": sum(1 for pkg in packages if not pkg["direct"]),
-                    "vulns": vuln_count,
-                    "critical": critical_count,
-                    "high": high_count,
-                    "medium": medium_count,
-                    "low": 0
-                },
-                "topRisks": top_risks
-            }
-        }
     
     def _get_mock_enriched_sbom(self) -> Dict[str, Any]:
         """Fallback mock data in case real scanning fails."""
