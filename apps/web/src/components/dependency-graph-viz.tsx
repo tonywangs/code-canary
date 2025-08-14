@@ -142,12 +142,27 @@ export default function DependencyGraphViz({ sbom }: DependencyGraphVizProps) {
       .attr("stroke-width", (d: any) => d.group === 0 ? 3 : (d.direct ? 2 : 1))
       .call(drag(simulation) as any);
 
+    // Create labels
+    const label = svg.append("g")
+      .selectAll("text")
+      .data(graphData.nodes)
+      .join("text")
+      .text((d: any) => d.group === 0 ? d.name : d.name)
+      .attr("font-size", (d: any) => d.group === 0 ? "12px" : "10px")
+      .attr("font-weight", (d: any) => d.group === 0 ? "bold" : "normal")
+      .attr("fill", "#374151")
+      .attr("text-anchor", "middle")
+      .attr("dy", (d: any) => d.group === 0 ? "25" : "15")
+      .call(drag(simulation) as any);
+
     // Add tooltips
     node.append("title")
       .text((d: any) => d.group === 0 ? 
         `Project: ${d.name}\nRoot node` : 
         `${d.name}@${d.version}\n${d.direct ? 'Direct' : 'Transitive'}\nSeverity: ${d.severity}`
       );
+
+
 
     // Update positions on simulation tick
     simulation.on("tick", () => {
@@ -160,6 +175,10 @@ export default function DependencyGraphViz({ sbom }: DependencyGraphVizProps) {
       node
         .attr("cx", (d: any) => d.x)
         .attr("cy", (d: any) => d.y);
+
+      label
+        .attr("x", (d: any) => d.x)
+        .attr("y", (d: any) => d.y);
     });
 
     // Drag behavior
