@@ -2,9 +2,9 @@
 
 AI-powered dependency vulnerability analysis and supply chain security platform. Analyzes your project's entire dependency graph (SBOM) to flag vulnerabilities, supply-chain risks, and generate minimal patch plans.
 
-Won 1st Place Overall + 2nd Place Modal Prize at the AI Agent & Infra Hackathon (by Lux Capital, Modal, Cognition, AWS, and Ramp)
+Won 1st Place Overall + 2nd Place Modal Prize at the [AI Agent & Infra Hackathon](https://ai-agent-infra.devpost.com/) (by Lux Capital, Modal, Cognition, AWS, and Ramp)
 
-Demo video link: [https://youtu.be/eLHv1lriGms](https://www.youtube.com/watch?v=mQcUn0XgKqY)  
+Demo video link: https://youtu.be/eLHv1lriGms  
 Devpost link: https://devpost.com/software/code-canary
 
 ## 🏗️ Architecture
