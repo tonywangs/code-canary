@@ -52,3 +52,9 @@ temp/
 
 # PDF reports
 reports/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
